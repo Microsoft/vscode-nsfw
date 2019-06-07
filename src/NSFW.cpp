@@ -48,7 +48,8 @@ void NSFW::fireErrorCallback(uv_async_t *handle) {
   v8::Local<v8::Value> argv[] = {
     New<v8::String>(baton->error).ToLocalChecked()
   };
-  baton->nsfw->mErrorCallback->Call(1, argv);
+  AsyncResource resource("NSFW::fireErrorCallback");
+  baton->nsfw->mErrorCallback->Call(1, argv, &resource);
   delete baton;
 }
 
@@ -72,25 +73,26 @@ void NSFW::fireEventCallback(uv_async_t *handle) {
     v8::Local<v8::Object> jsEvent = New<v8::Object>();
 
 
-    jsEvent->Set(New<v8::String>("action").ToLocalChecked(), New<v8::Number>((*baton->events)[i]->type));
-    jsEvent->Set(New<v8::String>("directory").ToLocalChecked(), New<v8::String>((*baton->events)[i]->fromDirectory).ToLocalChecked());
+    Set(jsEvent, New<v8::String>("action").ToLocalChecked(), New<v8::Number>((*baton->events)[i]->type));
+    Set(jsEvent, New<v8::String>("directory").ToLocalChecked(), New<v8::String>((*baton->events)[i]->fromDirectory).ToLocalChecked());
 
     if ((*baton->events)[i]->type == RENAMED) {
-      jsEvent->Set(New<v8::String>("oldFile").ToLocalChecked(), New<v8::String>((*baton->events)[i]->fromFile).ToLocalChecked());
-      jsEvent->Set(New<v8::String>("newDirectory").ToLocalChecked(), New<v8::String>((*baton->events)[i]->toDirectory).ToLocalChecked());
-      jsEvent->Set(New<v8::String>("newFile").ToLocalChecked(), New<v8::String>((*baton->events)[i]->toFile).ToLocalChecked());
+      Set(jsEvent, New<v8::String>("oldFile").ToLocalChecked(), New<v8::String>((*baton->events)[i]->fromFile).ToLocalChecked());
+      Set(jsEvent, New<v8::String>("newDirectory").ToLocalChecked(), New<v8::String>((*baton->events)[i]->toDirectory).ToLocalChecked());
+      Set(jsEvent, New<v8::String>("newFile").ToLocalChecked(), New<v8::String>((*baton->events)[i]->toFile).ToLocalChecked());
     } else {
-      jsEvent->Set(New<v8::String>("file").ToLocalChecked(), New<v8::String>((*baton->events)[i]->fromFile).ToLocalChecked());
+      Set(jsEvent, New<v8::String>("file").ToLocalChecked(), New<v8::String>((*baton->events)[i]->fromFile).ToLocalChecked());
     }
 
-    eventArray->Set(i, jsEvent);
+    Set(eventArray, i, jsEvent);
   }
 
   v8::Local<v8::Value> argv[] = {
     eventArray
   };
 
-  baton->nsfw->mEventCallback->Call(1, argv);
+  AsyncResource resource("NSFW::fireEventCallback");
+  baton->nsfw->mEventCallback->Call(1, argv, &resource);
 
   uv_thread_t cleanup;
   uv_thread_create(&cleanup, NSFW::cleanupEventCallback, baton);
@@ -146,8 +148,8 @@ NAN_MODULE_INIT(NSFW::Init) {
   SetPrototypeMethod(tpl, "start", Start);
   SetPrototypeMethod(tpl, "stop", Stop);
 
-  constructor.Reset(tpl->GetFunction());
-  Set(target, New<v8::String>("NSFW").ToLocalChecked(), tpl->GetFunction());
+  constructor.Reset(Nan::GetFunction(tpl).ToLocalChecked());
+  Set(target, New<v8::String>("NSFW").ToLocalChecked(), Nan::GetFunction(tpl).ToLocalChecked());
 }
 
 NAN_METHOD(NSFW::JSNew) {
@@ -174,8 +176,8 @@ NAN_METHOD(NSFW::JSNew) {
     return ThrowError("Fourth argument of constructor must be a callback.");
   }
 
-  uint32_t debounceMS = info[0]->Uint32Value();
-  v8::String::Utf8Value utf8Value(info[1]->ToString());
+  uint32_t debounceMS = Nan::To<uint32_t>(info[0]).FromJust();
+  Nan::Utf8String utf8Value(info[1]);
   std::string path = std::string(*utf8Value);
   Callback *eventCallback = new Callback(info[2].As<v8::Function>());
   Callback *errorCallback = new Callback(info[3].As<v8::Function>());
@@ -206,12 +208,13 @@ NAN_METHOD(NSFW::Start) {
     v8::Local<v8::Value> argv[1] = {
       Nan::Error("This NSFW cannot be started, because it is already running.")
     };
-    callback->Call(1, argv);
+    AsyncResource resource("NSFW::Start");
+    callback->Call(1, argv, &resource);
     delete callback;
     return;
   }
 
-  New(nsfw->mPersistentHandle)->Set(New("nsfw").ToLocalChecked(), info.This());
+  Set(New(nsfw->mPersistentHandle), New("nsfw").ToLocalChecked(), info.This());
 
   AsyncQueueWorker(new StartWorker(nsfw, callback));
 }
@@ -252,9 +255,9 @@ void NSFW::StartWorker::HandleOKCallback() {
     v8::Local<v8::Value> argv[1] = {
       Nan::Error("NSFW was unable to start watching that directory.")
     };
-    callback->Call(1, argv);
+    callback->Call(1, argv, async_resource);
   } else {
-    callback->Call(0, NULL);
+    callback->Call(0, NULL, async_resource);
   }
 }
 
@@ -279,7 +282,8 @@ NAN_METHOD(NSFW::Stop) {
     v8::Local<v8::Value> argv[1] = {
       Nan::Error("This NSFW cannot be stopped, because it is not running.")
     };
-    callback->Call(1, argv);
+    AsyncResource resource("NSFW::Stop");
+    callback->Call(1, argv, &resource);
     delete callback;
     return;
   }
@@ -321,7 +325,7 @@ void NSFW::StopWorker::HandleOKCallback() {
   uv_close(reinterpret_cast<uv_handle_t*>(&mNSFW->mErrorCallbackAsync), nullptr);
   uv_close(reinterpret_cast<uv_handle_t*>(&mNSFW->mEventCallbackAsync), nullptr);
 
-  callback->Call(0, NULL);
+  callback->Call(0, NULL, async_resource);
 }
 
 NODE_MODULE(nsfw, NSFW::Init)
