@@ -8,6 +8,8 @@
 #define sleep_for_ms(ms) usleep(ms * 1000)
 #endif
 
+#define ALLOW_UNUSED_LOCAL(x) (void)x
+
 #pragma unmanaged
 Persistent<v8::Function> NSFW::constructor;
 
@@ -45,7 +47,8 @@ void NSFW::fireErrorCallback(uv_async_t *handle) {
   v8::Local<v8::Value> argv[] = {
     New<v8::String>(baton->error).ToLocalChecked()
   };
-  baton->nsfw->mErrorCallback->Call(1, argv);
+  AsyncResource resource("NSFW:errorCallback");
+  baton->nsfw->mErrorCallback->Call(1, argv, &resource);
   delete baton;
 }
 
@@ -58,30 +61,32 @@ void NSFW::fireEventCallback(uv_async_t *handle) {
   }
 
   v8::Local<v8::Array> eventArray = New<v8::Array>((int)events->size());
+  v8::Local<v8::Context> context = Nan::GetCurrentContext();
 
   for (unsigned int i = 0; i < events->size(); ++i) {
     v8::Local<v8::Object> jsEvent = New<v8::Object>();
 
 
-    jsEvent->Set(New<v8::String>("action").ToLocalChecked(), New<v8::Number>((*events)[i]->type));
-    jsEvent->Set(New<v8::String>("directory").ToLocalChecked(), New<v8::String>((*events)[i]->fromDirectory).ToLocalChecked());
+    ALLOW_UNUSED_LOCAL(jsEvent->Set(context, New<v8::String>("action").ToLocalChecked(), New<v8::Number>((*events)[i]->type)));
+    ALLOW_UNUSED_LOCAL(jsEvent->Set(context, New<v8::String>("directory").ToLocalChecked(), New<v8::String>((*events)[i]->fromDirectory).ToLocalChecked()));
 
     if ((*events)[i]->type == RENAMED) {
-      jsEvent->Set(New<v8::String>("oldFile").ToLocalChecked(), New<v8::String>((*events)[i]->fromFile).ToLocalChecked());
-      jsEvent->Set(New<v8::String>("newDirectory").ToLocalChecked(), New<v8::String>((*events)[i]->toDirectory).ToLocalChecked());
-      jsEvent->Set(New<v8::String>("newFile").ToLocalChecked(), New<v8::String>((*events)[i]->toFile).ToLocalChecked());
+      ALLOW_UNUSED_LOCAL(jsEvent->Set(context, New<v8::String>("oldFile").ToLocalChecked(), New<v8::String>((*events)[i]->fromFile).ToLocalChecked()));
+      ALLOW_UNUSED_LOCAL(jsEvent->Set(context, New<v8::String>("newDirectory").ToLocalChecked(), New<v8::String>((*events)[i]->toDirectory).ToLocalChecked()));
+      ALLOW_UNUSED_LOCAL(jsEvent->Set(context, New<v8::String>("newFile").ToLocalChecked(), New<v8::String>((*events)[i]->toFile).ToLocalChecked()));
     } else {
-      jsEvent->Set(New<v8::String>("file").ToLocalChecked(), New<v8::String>((*events)[i]->fromFile).ToLocalChecked());
+      ALLOW_UNUSED_LOCAL(jsEvent->Set(context, New<v8::String>("file").ToLocalChecked(), New<v8::String>((*events)[i]->fromFile).ToLocalChecked()));
     }
 
-    eventArray->Set(i, jsEvent);
+    ALLOW_UNUSED_LOCAL(eventArray->Set(context, i, jsEvent));
   }
 
   v8::Local<v8::Value> argv[] = {
     eventArray
   };
 
-  nsfw->mEventCallback->Call(1, argv);
+  AsyncResource resource("NSFW:eventCallback");
+  nsfw->mEventCallback->Call(1, argv, &resource);
 }
 
 void NSFW::pollForEvents(void *arg) {
@@ -188,12 +193,13 @@ NAN_METHOD(NSFW::Start) {
     v8::Local<v8::Value> argv[1] = {
       Nan::Error("This NSFW cannot be started, because it is already running.")
     };
-    callback->Call(1, argv);
+    AsyncResource resource("NSFW:startCallback");
+    callback->Call(1, argv, &resource);
     delete callback;
     return;
   }
 
-  New(nsfw->mPersistentHandle)->Set(New("nsfw").ToLocalChecked(), info.This());
+  ALLOW_UNUSED_LOCAL(New(nsfw->mPersistentHandle)->Set(Nan::GetCurrentContext(), New("nsfw").ToLocalChecked(), info.This()));
 
   AsyncQueueWorker(new StartWorker(nsfw, callback));
 }
@@ -235,9 +241,9 @@ void NSFW::StartWorker::HandleOKCallback() {
     v8::Local<v8::Value> argv[1] = {
       Nan::Error("NSFW was unable to start watching that directory.")
     };
-    callback->Call(1, argv);
+    callback->Call(1, argv, async_resource);
   } else {
-    callback->Call(0, NULL);
+    callback->Call(0, NULL, async_resource);
   }
 }
 
@@ -262,7 +268,8 @@ NAN_METHOD(NSFW::Stop) {
     v8::Local<v8::Value> argv[1] = {
       Nan::Error("This NSFW cannot be stopped, because it is not running.")
     };
-    callback->Call(1, argv);
+    AsyncResource resource("NSFW:stopCallback");
+    callback->Call(1, argv, &resource);
     delete callback;
     return;
   }
@@ -305,7 +312,7 @@ void NSFW::StopWorker::HandleOKCallback() {
   uv_close(reinterpret_cast<uv_handle_t*>(&mNSFW->mErrorCallbackAsync), nullptr);
   uv_close(reinterpret_cast<uv_handle_t*>(&mNSFW->mEventCallbackAsync), nullptr);
 
-  callback->Call(0, NULL);
+  callback->Call(0, NULL, async_resource);
 }
 
 NODE_MODULE(nsfw, NSFW::Init)
