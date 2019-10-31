@@ -2,11 +2,14 @@ const nsfw = require('../src/');
 const path = require('path');
 const fse = require('fs-extra');
 const exec = require('executive');
+const { promisify } = require('util');
 
 jasmine.DEFAULT_TIMEOUT_INTERVAL = 120000;
 
 const DEBOUNCE = 1000;
 const TIMEOUT_PER_STEP = 3000;
+
+const timeout = promisify(setTimeout);
 
 describe('Node Sentinel File Watcher', function() {
   const workDir = path.resolve('./mockfs');
@@ -28,7 +31,7 @@ describe('Node Sentinel File Watcher', function() {
       .then(() => fse.mkdir(workDir))
       .then(() => {
         const promises = [];
-        for (let i = 0; i < 5; ++i) {
+        for (let i = 0; i < 10; ++i) {
           promises.push(makeDir(i));
         }
         return Promise.all(promises);
@@ -318,6 +321,46 @@ describe('Node Sentinel File Watcher', function() {
             .then(() => watchB.stop())
             .then((err) => done.fail(err)));
     });
+
+    if (process.platform) {
+      it('will properly track the movement of watched directories across watched directories', function(done) {
+        let watch;
+
+        const performRenameProcedure = number =>
+          fse.mkdir(path.join(workDir, `test${number}`, 'sneaky-folder'))
+            .then(() => fse.move(
+              path.join(workDir, `test${number}`, `folder${number}`),
+              path.join(workDir, `test${number + 1}`, 'bad-folder')
+            ))
+            .then(() => fse.move(
+              path.join(workDir, `test${number}`, 'sneaky-folder'),
+              path.join(workDir, `test${number}`, 'bad-folder')
+            ))
+            .then(() => fse.remove(path.join(workDir, `test${number}`)))
+            .then(() => fse.remove(path.join(workDir, `test${number + 1}`)));
+
+        return nsfw(workDir, () => {}, { debounceMS: DEBOUNCE })
+          .then(_w => {
+            watch = _w;
+            return watch.start();
+          })
+          .then(() => new Promise(resolve => {
+            setTimeout(resolve, TIMEOUT_PER_STEP);
+          }))
+          .then(() => Promise.all([
+            performRenameProcedure(0),
+            performRenameProcedure(2),
+            performRenameProcedure(4),
+            performRenameProcedure(6),
+            performRenameProcedure(8)
+          ]))
+          .then(() => new Promise(resolve => {
+            setTimeout(resolve, TIMEOUT_PER_STEP);
+          }))
+          .then(() => watch.stop())
+          .then(done, () => watch.stop().then((err) => done.fail(err)));
+      });
+    }
   });
 
   describe('Recursive', function() {
@@ -356,7 +399,9 @@ describe('Node Sentinel File Watcher', function() {
           return paths.reduce((chain, dir) => {
             directory = path.join(directory, dir);
             const nextDirectory = directory;
-            return chain.then(() => fse.mkdir(nextDirectory));
+            return chain
+              .then(() => fse.mkdir(nextDirectory))
+              .then(() => timeout(60));
           }, Promise.resolve());
         })
         .then(() => fse.open(path.join(directory, file), 'w'))

@@ -1,0 +1,28 @@
+on:
+  push:
+    branches:
+      - master
+  pull_request: 
+
+name: Run Tests
+
+jobs:
+
+  test:
+    name: Tests
+    strategy:
+        matrix:
+          node: [8, 10, 12]
+          os: [windows-2016, ubuntu-16.04, ubuntu-18.04, macOS-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@master
+
+      - name: Use Node.js ${{ matrix.node }}
+        uses: actions/setup-node@master
+        with:
+          node-version: ${{ matrix.node }}
+
+      - run: yarn
+
+      - run: yarn test
