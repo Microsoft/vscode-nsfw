@@ -1,4 +1,4 @@
-declare module 'nsfw' {
+declare module 'vscode-nsfw' {
     interface NsfwFunction {
         (watchPath: string, eventCallback: (events: Array<FileChangeEvent>) => void, options?: Partial<Options>): Promise<NSFW>;
         actions: typeof ActionType;
