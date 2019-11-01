@@ -1,6 +1,6 @@
 {
   "name": "vscode-nsfw",
-  "version": "1.2.5",
+  "version": "1.2.6",
   "description": "A simple file watcher for Node",
   "main": "lib/src/index.js",
   "scripts": {
@@ -21,7 +21,7 @@
     "url": "https://github.com/axosoft/node-simple-file-watcher/issues"
   },
   "files": [
-    "typings.d.ts",
+    "index.d.ts",
     "lib",
     "src",
     "includes",
